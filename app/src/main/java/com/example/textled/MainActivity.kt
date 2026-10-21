@@ -1,6 +1,5 @@
 package com.example.textled
 
-import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -22,15 +21,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +51,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
         setContent {
             TextLedTheme {
                 TextLedScreen()
@@ -62,6 +63,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TextLedScreen() {
     var inputText by rememberSaveable { mutableStateOf("") }
+    var textHistory by rememberSaveable(
+        stateSaver = textHistorySaver
+    ) {
+        mutableStateOf(emptyList<TextHistoryItem>())
+    }
     val colorSaver = Saver<Color, Long>(
         save = { it.value.toLong() },
         restore = { Color(it.toULong()) }
@@ -73,6 +79,46 @@ fun TextLedScreen() {
     var originalOrientation by rememberSaveable { mutableIntStateOf(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) }
     val activity = LocalActivity.current
 
+    fun addToHistory(text: String) {
+        if (text.isBlank()) return
+        val existing = textHistory.find { it.text == text }
+        val updatedHistory = listOf(
+            TextHistoryItem(
+                text = text,
+                pinned = existing?.pinned ?: false
+            )
+        ) + textHistory.filterNot { it.text == text }
+        val sortedHistory = updatedHistory.filter { it.pinned } +
+                updatedHistory.filterNot { it.pinned }
+        val limitedHistory = sortedHistory.toMutableList()
+        while (limitedHistory.size > 5) {
+            val oldestUnpinned = limitedHistory.indexOfLast {
+                !it.pinned
+            }
+            if (oldestUnpinned == -1) break
+            limitedHistory.removeAt(oldestUnpinned)
+        }
+        textHistory = limitedHistory
+    }
+
+    fun togglePin(text: String) {
+        val item = textHistory.find { it.text == text } ?: return
+        if (!item.pinned && textHistory.count { it.pinned } >= 3) {
+            return
+        }
+        textHistory = textHistory.map {
+                if (it.text == text) {
+                    it.copy(pinned = !it.pinned)
+                } else {
+                    it
+                }
+            }
+            .let { updated ->
+                updated.filter { it.pinned } +
+                        updated.filterNot { it.pinned }
+            }
+    }
+
     BackHandler(enabled = isStarted) {
         isStarted = false
         activity?.requestedOrientation = originalOrientation
@@ -83,10 +129,7 @@ fun TextLedScreen() {
             text = inputText,
             textColor = textColor,
             backgroundColor = backgroundColor
-        ) {
-            isStarted = false
-            activity?.requestedOrientation = originalOrientation
-        }
+        )
         return
     }
 
@@ -112,6 +155,7 @@ fun TextLedScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.Top
         ) {
@@ -186,6 +230,54 @@ fun TextLedScreen() {
                         innerTextField()
                     }
                 )
+            }
+            if (textHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "Recent texts",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    textHistory.forEach { item ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = item.text,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            inputText = item.text
+                                        },
+                                    maxLines = 2,
+                                    fontSize = 14.sp
+                                )
+                                Button(
+                                    onClick = {
+                                        togglePin(item.text)
+                                    },
+                                    enabled = item.pinned ||
+                                            textHistory.count { it.pinned } < 3
+                                ) {
+                                    Text(
+                                        if (item.pinned) "Unpin" else "Pin"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(24.dp))
             Row(
@@ -263,7 +355,6 @@ fun TextLedScreen() {
                     }
                 }
             }
-
             if (selectedPalette != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
@@ -321,11 +412,11 @@ fun TextLedScreen() {
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = {
+                    addToHistory(inputText)
                     selectedPalette = null
                     originalOrientation = activity?.requestedOrientation?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     isStarted = true
-                    activity?.requestedOrientation =
-                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -341,12 +432,33 @@ fun TextLedScreen() {
     }
 }
 
+private data class TextHistoryItem(
+    val text: String,
+    val pinned: Boolean = false
+)
+
+private val textHistorySaver = listSaver<List<TextHistoryItem>, String>(
+    save = { history ->
+        history.map {
+            "${if (it.pinned) "1" else "0"}|${it.text}"
+        }
+    },
+    restore = { saved ->
+        saved.map { entry ->
+            val separator = entry.indexOf('|')
+            TextHistoryItem(
+                text = entry.substring(separator + 1),
+                pinned = entry.substring(0, separator) == "1"
+            )
+        }
+    }
+)
+
 @Composable
 fun LedDisplay(
     text: String,
     textColor: Color,
-    backgroundColor: Color,
-    onBack: () -> Unit
+    backgroundColor: Color
 ) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -356,24 +468,20 @@ fun LedDisplay(
             .fillMaxSize()
             .background(backgroundColor)
     ) {
-        val displayText = text
         val availableWidthPx = with(density) {
             (maxWidth - 16.dp).toPx()
         }
-
         val fittedFontSize = remember(
-            displayText,
+            text,
             availableWidthPx,
             textColor
         ) {
             var low = 1f
             var high = 300f
-
             repeat(18) {
                 val mid = (low + high) / 2f
-
                 val measured = textMeasurer.measure(
-                    text = AnnotatedString(displayText),
+                    text = AnnotatedString(text),
                     style = TextStyle(fontSize = mid.sp),
                     maxLines = 1,
                     softWrap = false
@@ -385,10 +493,8 @@ fun LedDisplay(
                     high = mid
                 }
             }
-
             low
         }
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -396,7 +502,7 @@ fun LedDisplay(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = displayText,
+                text = text,
                 color = textColor,
                 fontSize = fittedFontSize.sp,
                 maxLines = 1,
