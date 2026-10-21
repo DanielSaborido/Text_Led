@@ -7,6 +7,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,8 +25,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -36,6 +45,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -45,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import com.example.textled.ui.theme.TextLedTheme
 
 class MainActivity : ComponentActivity() {
@@ -178,24 +189,26 @@ fun TextLedScreen() {
                 shape = RoundedCornerShape(12.dp),
                 color = backgroundColor
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = inputText.ifEmpty {
-                            "Your text will appear here"
-                        },
-                        color = if (inputText.isEmpty()) {
-                            Color.Gray
-                        } else {
-                            textColor
-                        },
-                        fontSize = 28.sp,
-                        textAlign = TextAlign.Center
+                if (inputText.isNotEmpty()) {
+                    LedDisplay(
+                        text = inputText.ifEmpty { "Your text will appear here" },
+                        textColor = if (inputText.isEmpty()) Color.Gray else textColor,
+                        backgroundColor = backgroundColor
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Your text will appear here",
+                            color = Color.Gray,
+                            fontSize = 28.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
@@ -467,48 +480,76 @@ fun LedDisplay(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
+            .clipToBounds()
     ) {
-        val availableWidthPx = with(density) {
-            (maxWidth - 16.dp).toPx()
-        }
-        val fittedFontSize = remember(
-            text,
-            availableWidthPx,
-            textColor
-        ) {
-            var low = 1f
-            var high = 300f
-            repeat(18) {
-                val mid = (low + high) / 2f
-                val measured = textMeasurer.measure(
-                    text = AnnotatedString(text),
-                    style = TextStyle(fontSize = mid.sp),
-                    maxLines = 1,
-                    softWrap = false
-                )
+        val scrollFontSize = (maxHeight.value * 0.65f).coerceAtMost(300f).sp
+        val textWidthPx = textMeasurer.measure(
+            text = AnnotatedString(text),
+            style = TextStyle(fontSize = scrollFontSize),
+            maxLines = 1,
+            softWrap = false
+        ).size.width.toFloat()
+        val gapPx = with(density) { 48.dp.toPx() }
+        val cycleDistance = textWidthPx + gapPx
+        val transition = rememberInfiniteTransition(
+            label = "ledMarquee"
+        )
+        val animatedOffset = transition.animateFloat(
+            initialValue = 0f,
+            targetValue = cycleDistance,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = (
+                            cycleDistance / density.density * 25
+                            ).toInt().coerceIn(2500, 20000),
+                    easing = LinearEasing
+                ),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ledScrollOffset"
+        )
 
-                if (measured.size.width <= availableWidthPx) {
-                    low = mid
-                } else {
-                    high = mid
-                }
-            }
-            low
-        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 8.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.CenterStart
         ) {
-            Text(
-                text = text,
-                color = textColor,
-                fontSize = fittedFontSize.sp,
-                maxLines = 1,
-                softWrap = false,
-                textAlign = TextAlign.Center
-            )
+            Row(
+                modifier = Modifier
+                    .requiredWidth(
+                        with(density) {
+                            (textWidthPx * 3f + gapPx * 3f).toDp()
+                        }
+                    )
+                    .offset {
+                        IntOffset(
+                            x = -animatedOffset.value.toInt(),
+                            y = 0
+                        )
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(3) {
+                    Text(
+                        text = text,
+                        color = textColor,
+                        fontSize = scrollFontSize,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.requiredWidth(
+                            with(density) {
+                                textWidthPx.toDp()
+                            }
+                        )
+                    )
+                    Spacer(
+                        modifier = Modifier.width(
+                            with(density) { gapPx.toDp() }
+                        )
+                    )
+                }
+            }
         }
     }
 }
