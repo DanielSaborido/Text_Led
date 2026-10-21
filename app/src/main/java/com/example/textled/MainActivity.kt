@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.saveable.listSaver
@@ -88,6 +89,7 @@ fun TextLedScreen() {
     var selectedPalette by remember { mutableStateOf<String?>(null) }
     var isStarted by rememberSaveable { mutableStateOf(false) }
     var originalOrientation by rememberSaveable { mutableIntStateOf(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) }
+    var scrollSpeed by rememberSaveable { mutableFloatStateOf(40f) }
     val activity = LocalActivity.current
 
     fun addToHistory(text: String) {
@@ -139,7 +141,8 @@ fun TextLedScreen() {
         LedDisplay(
             text = inputText,
             textColor = textColor,
-            backgroundColor = backgroundColor
+            backgroundColor = backgroundColor,
+            scrollSpeed = scrollSpeed
         )
         return
     }
@@ -193,7 +196,8 @@ fun TextLedScreen() {
                     LedDisplay(
                         text = inputText.ifEmpty { "Your text will appear here" },
                         textColor = if (inputText.isEmpty()) Color.Gray else textColor,
-                        backgroundColor = backgroundColor
+                        backgroundColor = backgroundColor,
+                        scrollSpeed = scrollSpeed
                     )
                 } else {
                     Box(
@@ -422,6 +426,25 @@ fun TextLedScreen() {
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Scroll speed: ${scrollSpeed.toInt()}%",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Slider(
+                value = scrollSpeed,
+                onValueChange = { scrollSpeed = it },
+                valueRange = 1f..500f,
+                steps = 498
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Slow", fontSize = 12.sp)
+                Text("Fast", fontSize = 12.sp)
+            }
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = {
@@ -471,7 +494,8 @@ private val textHistorySaver = listSaver<List<TextHistoryItem>, String>(
 fun LedDisplay(
     text: String,
     textColor: Color,
-    backgroundColor: Color
+    backgroundColor: Color,
+    scrollSpeed: Float = 40f
 ) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -491,23 +515,27 @@ fun LedDisplay(
         ).size.width.toFloat()
         val gapPx = with(density) { 48.dp.toPx() }
         val cycleDistance = textWidthPx + gapPx
-        val transition = rememberInfiniteTransition(
-            label = "ledMarquee"
-        )
-        val animatedOffset = transition.animateFloat(
-            initialValue = 0f,
-            targetValue = cycleDistance,
-            animationSpec = infiniteRepeatable(
-                animation = tween(
-                    durationMillis = (
-                            cycleDistance / density.density * 25
-                            ).toInt().coerceIn(2500, 20000),
-                    easing = LinearEasing
+        val animatedOffset = key(scrollSpeed) {
+            val transition = rememberInfiniteTransition(
+                label = "ledMarquee"
+            )
+            transition.animateFloat(
+                initialValue = 0f,
+                targetValue = cycleDistance,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = (
+                                (cycleDistance / density.density) *
+                                        (1000f / scrollSpeed.coerceIn(1f, 500f)) *
+                                        (117f / scrollFontSize.value)
+                                ).toInt().coerceIn(100, 100000),
+                        easing = LinearEasing
+                    ),
+                    repeatMode = RepeatMode.Restart
                 ),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "ledScrollOffset"
-        )
+                label = "ledScrollOffset"
+            )
+        }
 
         Box(
             modifier = Modifier
