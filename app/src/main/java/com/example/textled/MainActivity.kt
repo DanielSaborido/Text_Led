@@ -89,7 +89,7 @@ fun TextLedScreen() {
     var selectedPalette by remember { mutableStateOf<String?>(null) }
     var isStarted by rememberSaveable { mutableStateOf(false) }
     var originalOrientation by rememberSaveable { mutableIntStateOf(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) }
-    var scrollSpeed by rememberSaveable { mutableFloatStateOf(40f) }
+    var scrollSpeed by rememberSaveable { mutableFloatStateOf(100f) }
     val activity = LocalActivity.current
 
     fun addToHistory(text: String) {
@@ -428,15 +428,15 @@ fun TextLedScreen() {
             }
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "Scroll speed: ${scrollSpeed.toInt()}%",
+                text = "Scroll speed: ${((scrollSpeed - 100f) / 400f * 100f).toInt()}%",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium
             )
             Slider(
                 value = scrollSpeed,
                 onValueChange = { scrollSpeed = it },
-                valueRange = 1f..500f,
-                steps = 498
+                valueRange = 100f..500f,
+                steps = 9
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -495,7 +495,7 @@ fun LedDisplay(
     text: String,
     textColor: Color,
     backgroundColor: Color,
-    scrollSpeed: Float = 40f
+    scrollSpeed: Float = 100f
 ) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
